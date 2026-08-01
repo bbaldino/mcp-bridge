@@ -1,0 +1,61 @@
+name: publish-image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+# main-push and tag-push are different refs and can run concurrently.
+# That is fine: they write disjoint version tags. Note both emit sha-<short>,
+# so that tag may end up pointing at whichever build finished last — Docker
+# builds are not byte-reproducible. The version tags are unaffected.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# No `test` job: this repo has no source code — it is a Dockerfile pinning
+# supergateway on Node 22. The image build is itself the gate; if the Dockerfile
+# is broken the build fails and nothing publishes.
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # No `type=raw,value=latest,enable={{is_default_branch}}` rule here.
+          # metadata-action's default `flavor: latest=auto` already applies
+          # latest to non-prerelease semver tags. Adding the raw rule too makes
+          # latest land on BOTH paths, so it bounces between "tip of main" and
+          # "newest release" depending on which workflow ran last.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
