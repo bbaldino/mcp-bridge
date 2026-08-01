@@ -14,11 +14,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# No `test` job: this repo has no source code — it is a Dockerfile pinning
-# supergateway on Node 22. The image build is itself the gate; if the Dockerfile
-# is broken the build fails and nothing publishes.
 jobs:
+  # Shared with release-please.yml so a broken Dockerfile blocks both the image
+  # and the release. See test.yml for why a build-only job is the gate here.
+  test:
+    uses: ./.github/workflows/test.yml
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
