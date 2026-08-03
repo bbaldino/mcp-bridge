@@ -7,9 +7,13 @@ on:
   workflow_dispatch:
 
 # main-push and tag-push are different refs and can run concurrently.
-# That is fine: they write disjoint version tags. Note both emit sha-<short>,
-# so that tag may end up pointing at whichever build finished last — Docker
-# builds are not byte-reproducible. The version tags are unaffected.
+# They write genuinely disjoint tag sets, but ONLY because of the
+# enable={{is_default_branch}} on the sha rule below: main writes sha-<short>,
+# the tag writes the version tags. Without that flag both runs emit sha-<short>
+# and it silently lands on whichever finished last.
+# The two runs still build the same commit twice, so sha-<short> and X.Y.Z are
+# different digests of identical source. That is expected — verify a release by
+# comparing the three version tags to each other.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -49,7 +53,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,enable={{is_default_branch}}
 
       - uses: docker/build-push-action@v6
         with:
