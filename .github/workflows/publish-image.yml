@@ -1,19 +1,23 @@
 name: publish-image
 
+# Tags ONLY — deliberately not `branches: [main]`.
+#
+# Triggering on both built the release commit twice: once when release-please
+# merged its PR to main, once when it tagged that same commit. Both runs emitted
+# sha-<short>, so it landed on whichever finished last — nondeterminism in the
+# one tag whose whole purpose is identifying an exact build.
+#
+# Tag-only gives one build per release, every tag written exactly once, and
+# sha-<short> sharing a digest with the version tags. The cost is no image for
+# commits that are never released — with release-please ignoring docs/chore,
+# that is exactly the changes nobody deploys.
+#
+# Tests still run on every push to main: release-please.yml triggers there and
+# gates on the same reusable test job.
 on:
   push:
-    branches: [main]
     tags: ['v*.*.*']
   workflow_dispatch:
-
-# main-push and tag-push are different refs and can run concurrently.
-# They write genuinely disjoint tag sets, but ONLY because of the
-# enable={{is_default_branch}} on the sha rule below: main writes sha-<short>,
-# the tag writes the version tags. Without that flag both runs emit sha-<short>
-# and it silently lands on whichever finished last.
-# The two runs still build the same commit twice, so sha-<short> and X.Y.Z are
-# different digests of identical source. That is expected — verify a release by
-# comparing the three version tags to each other.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -53,7 +57,10 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-,enable={{is_default_branch}}
+            # No enable= restriction: this workflow only runs on a tag, so
+            # sha-<short> is emitted once, by the same build that emits the
+            # version tags. All four share one digest.
+            type=sha,prefix=sha-
 
       - uses: docker/build-push-action@v6
         with:
