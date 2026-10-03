@@ -4,16 +4,29 @@ name: test
 # a red main blocks BOTH — no image and no release PR. Ownership lives here so
 # the two callers cannot drift apart.
 #
-# This repo has no source code: it is a Dockerfile pinning supergateway on
-# Node 22. So the only meaningful gate is "does the image still build". Without
+# This repo has no source code: it is Dockerfiles pinning other people's
+# packages. So the only meaningful gate is "do the images still build". Without
 # it, release-please would happily tag and publish a GitHub Release for a broken
 # Dockerfile, with the failing tag build as the only signal.
+#
+# The matrix must stay in step with publish-image.yml's — a context gated here
+# but not published (or vice versa) is the drift this shared file exists to
+# prevent.
 on:
   workflow_call:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - context: .
+            name: mcp-bridge
+          - context: images/plex-proxy
+            name: mcp-bridge-plex
+    name: build (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
 
@@ -24,10 +37,10 @@ jobs:
       - name: Build image (no push)
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           platforms: linux/amd64
           push: false
           provenance: false
           sbom: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
